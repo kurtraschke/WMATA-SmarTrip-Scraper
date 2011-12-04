@@ -1,0 +1,6 @@
+* Clarify license
+* Fix for multiple cards so all cards can be fetched at once
+* Fix so we can fetch one month at a time
+* Figure out what needs to be done to re-fetch the current month to get latest transactions
+  * Easy, lazy solution: blow away all transactions for the current month and re-insert them all
+* Package for distribution; dependencies are BeautifulSoup, mechanize, sqlalchemy

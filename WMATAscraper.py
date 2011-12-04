@@ -1,87 +1,144 @@
 # Simple python screen scraper for WMATA SmarTrip Card Usage History Data
-# Scrapes data from WMATA's website and returns clean CVS file of SmarTrip Card Usage History.
+# Scrapes data from WMATA's website and returns clean SQLite database of SmarTrip card usage history.
 # Written by Justin Grimes (@justgrimes) & Josh Tauberer (@joshdata) 
 
-# NOTES - ONLY THING NECESSARY IS TO ADD USER NAME AND PASSWORD IN CODE 
 # Works perfectly, uses mechanize to navigate pages and beautiful soup to extract data
-# Will extract data from WMATA and write seperate csv files for each card associate w/ account
 
 # importing libs
 import re
+from argparse import ArgumentParser
+import getpass
+
 import BeautifulSoup
 import mechanize
-import csv
-import sys
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-br = mechanize.Browser()
-br.open("https://smartrip.wmata.com/Account/AccountLogin.aspx") #login page
+from models import metadata, Transaction, PurseTransaction
 
-br.select_form(name="aspnetForm") #form name
-br["ctl00$MainContent$txtUsername"] = "USERNAME GOES HERE" #<-- enter your username here
-br["ctl00$MainContent$txtPassword"] = "PASSWORD GOES HERE" #<-- enter your password here
+def login(br, username, password):
+    br.open("https://smartrip.wmata.com/Account/AccountLogin.aspx") #login page
 
-response1 = br.submit().read()
+    br.select_form(name="aspnetForm") #form name
+    br["ctl00$MainContent$txtUsername"] = username
+    br["ctl00$MainContent$txtPassword"] = password
+    response1 = br.submit().read()
+    return response1
 
-if len(sys.argv) == 1:
-	# download the first card, but show all card names so the user can choose
-	
-	print "Available cards are..."
-	for cards in re.findall(r"CardSummary.aspx\?card_id=(\d+)\">(.*?)<", response1):
-		print cards[0], cards[1]
-	print ""
-	print "And you can specify a card number on the command line!"
-	print
-	
-	matching_card = re.search(r"CardSummary.aspx\?card_id=(\d+)\">(.*?)<", response1)
-	if not matching_card: raise Exception("card not found")
-	card_id = matching_card.group(1)
-	card_name = matching_card.group(2)
+def getCards(cardList):
+    soup = BeautifulSoup.BeautifulSoup(cardList)
+    cards = {}
+    matchID = re.compile(r"CardSummary.aspx\?card_id=(\d+)")
+    
+    for card in soup.findAll('a', href=matchID):
+        cardID = matchID.findall(card['href'])[0]
+        (cardName, cardSerial) =  re.findall(r"(.+) \((\d+)\)", card.find(text=True))[0]
+        cards[cardID] = {'cardName': cardName, 'cardSerial': cardSerial}
 
-	print "Downloading data for...", card_id, card_name
+    return cards
 
-else:
-	# download just one card's data
-	card_id = sys.argv[1]
+def listCards(cards):
+    print "Card ID\tCard Serial\tCard Name"
+    for cardID, cardData in cards.items():
+        print "\t".join((cardID, cardData['cardSerial'], cardData['cardName']))
 
-#follows link to View Card Summary page	for a particular card
-response1 = br.follow_link(url_regex=r"CardSummary.aspx\?card_id=" + card_id).read()
 
-#follows link to View Usage History page for a particular card
-response1 = br.follow_link(text_regex=r"View Usage History").read()
+def scrapeCard(br, session, cardID, cardSerial):
+    print "in scrapeCard: "+cardID + " "+cardSerial
+    #follows link to View Card Summary page for a particular card
+    response1 = br.follow_link(url_regex=r"CardSummary.aspx\?card_id=" + cardID).read()
+    print "card summary"
+    #follows link to View Usage History page for a particular card
+    response1 = br.follow_link(text_regex=r"View Usage History").read()
+    print "usage history"
+    br.select_form(name="aspnetForm")
+    response1 = br.submit().read()
+    print response1
+    br.select_form(name="aspnetForm")
+    
+    #transaction status either 'All' or 'Successful' or 'Failed Autoloads';
+    #'All' includes every succesful transaction including failed (card didn't swipe or error)  
+    br["ctl00$MainContent$ddlTransactionStatus"] = ["All"]
 
-br.select_form(name="aspnetForm")
+    br.submit()
+    
+    #wmata only started posting data in 2010, pulls all available months
+    for year in xrange(2010, 2011+1):
+        for month in xrange(1, 12+1):
+            time_period = ("%d%02d" % (year, month))
+            print "\t", time_period
 
-response1 = br.submit().read()
+            #opens link to 'print' version of usage page for easier extraction 
+            br.open("https://smartrip.wmata.com/Card/CardUsageReport2.aspx?card_id=" +
+                    cardID + "&period=M&month=" + time_period)
+            response1 = br.follow_link(text_regex=r"Print Version").read()
+           
+            #extracts data from html table, writes to csv
+            soup = BeautifulSoup.BeautifulSoup(response1)
+            table = soup.find('table', {'class': 'reportTable'})
+            if table is None:
+                continue
+            rows = table.findAll('tr')
+            it = iter(rows)    
+            try:
+                while True:
+                    cols = it.next().findAll('td')
+                    if len(cols) == 0:
+                        continue #ignore blank rows
+                    rowspan = int(cols[0].get('rowspan', '1'))
 
-br.select_form(name="aspnetForm")
+                    parsedCols = [td.find(text=True) for td in cols]
+                    (sequence, timestamp, description, operator, entry, exit) = parsedCols[0:6]
 
-#transaction status either 'All' or 'Successful' or 'Failed Autoloads'; All includes every succesful transaction including failed (card didn't swipe or error)  
-br["ctl00$MainContent$ddlTransactionStatus"] = ["All"]
+                    purses = []
+                    purses.append(parsedCols[6:9])
 
-br.submit()
+                    if rowspan > 1:
+                        for i in xrange(1, rowspan):
+                            cols = it.next().findAll('td')
+                            purses.append([td.find(text=True) for td in cols])
 
-#write files
-g = csv.writer(open('wmata_log_' + card_id + '.csv', 'w'))
+                    txn = Transaction(sequence, timestamp, description, operator, entry, exit, purses)
+                    txn.card_id = cardID
+                    txn.card_serial = cardSerial
+                    session.add(txn)
+            except StopIteration:
+                pass
 
-#wmata only started posting data in 2010, pulls all available months
-for year in xrange(2010, 2011+1):
-	for month in xrange(1, 12+1):
-		time_period = ("%d%02d" % (year, month))
-		print "\t", time_period
+            session.commit()
 
-		try:
-			#opens link to 'print' version of usage page for easier extraction 
-			br.open("https://smartrip.wmata.com/Card/CardUsageReport2.aspx?card_id=" + card_id + "&period=M&month=" + time_period)
-			response1 = br.follow_link(text_regex=r"Print Version").read()
-		except:
-			continue
-			
-		#extracts data from html table, writes to csv
-		soup = BeautifulSoup.BeautifulSoup(response1)
-		t = soup.findAll('table')[1:]
+def main():
+    parser = ArgumentParser(description='Scrape WMATA SmarTrip usage data.')
+    parser.add_argument('username', metavar='USER', help='SmarTrip username')
+    parser.add_argument('--password', dest='password', metavar='PASSWORD', help='SmarTrip password')
+    parser.add_argument('--card-id', dest='cardID', type=int, help='card ID to fetch, defaults to first card')
+    parser.add_argument('--db', dest='outFile', default="smartrip.sqlite", help='SQLite output file') 
+    parser.add_argument('--list', dest='list', default=False,
+                        action='store_true', help='List available SmarTrip cards')
 
-		for table in t:
-			rows = table.findAll('tr')
-			for tr in rows:
-				cols = tr.findAll('td')
-				g.writerow( [str(td.find(text=True)) for td in cols] )
+    args = vars(parser.parse_args())
+
+     if args['password'] is None:
+        args['password'] = getpass.getpass('Enter SmarTrip password: ')
+
+    br = mechanize.Browser()
+    response = login(br, args['username'], args['password'])
+    cards = getCards(response)
+
+    if args['list']:
+        listCards(cards)
+    else:
+        engine = create_engine("sqlite:///" + args['outFile'], echo=True)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        metadata.bind = engine
+        metadata.create_all()
+
+        if args['cardID'] is not None:
+            scrapeCard(br, session, str(args['cardID']), cards[str(args['cardID'])]['cardSerial'])
+        else:
+            cardID = cards.keys()[0]
+            scrapeCard(br, session, str(cardID), cards[cardID]['cardSerial'])
+        
+if __name__=="__main__":
+    main()
