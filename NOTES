@@ -1,0 +1,30 @@
+* Where do gaps in transaction sequence numbers come from?
+  * The Farragut Crossing appears to cause a sequence jump,
+    as the final exit transaction never shows up (or at least
+    this was the case on the first day)
+    Open question: retest, both West to North and North to West,
+    and see if this is still a problem
+  * Bus fareboxes whose clocks are off will also cause
+    what looks like a jump, since transactions are ordered
+    by timestamp when downloaded.  Ordering the transactions
+    by sequence number results in the right order, but
+    then the timestamps jump.
+    Open question: do the Odyssey fareboxes get their
+    clocks reset when probed?
+  * Sometimes transactions just never show up,
+    including Metrorail transactions, which are normally
+    quite reliable.
+
+* Early data (July 2010) sometimes has a null Product; this
+  is obviously the stored value purse, but why isn't it listed 
+  as such?
+
+* What's an ALPO?  Board presentation explains: "Account Linked Products"
+
+* Why are all MTA Maryland transactions reported with an entry location
+  of "Central Computer"?
+  Open question: is MTA Maryland still on Nextfare 4?  If so, is this why
+  Directed Autoload isn't supported in MTA Maryland territory along with
+  the other data anomalies?  And what's the upgrade timeline?
+
+* Can we get a real API for this data? Please?

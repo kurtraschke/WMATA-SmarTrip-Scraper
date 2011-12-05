@@ -4,3 +4,23 @@
 * Figure out what needs to be done to re-fetch the current month to get latest transactions
   * Easy, lazy solution: blow away all transactions for the current month and re-insert them all
 * Package for distribution; dependencies are BeautifulSoup, mechanize, sqlalchemy
+* Map Metrorail station names to GTFS stop_id values so we can use that to get lat/lon
+* Build some kind of data-mining tool on top? Perhaps at least provide some recommended queries.
+  * select count(*), entry, exit
+    from transactions
+    where operator='Metrorail' 
+          and exit is not null 
+          and entry is not null 
+    group by entry, exit 
+    order by count(*) desc;
+  * select count(*), operator, description
+    from transactions
+    group by operator, description
+    order by count(*) desc;
+  * select *
+    from transactions t1 
+    where (t1.sequence+1) % 16 != (select t2.sequence
+                                   from transactions t2 
+                                   where t2.id > t1.id 
+                                   order by id asc 
+                                   limit 1);
