@@ -44,16 +44,12 @@ def listCards(cards):
 
 
 def scrapeCard(br, session, cardID, cardSerial):
-    print "in scrapeCard: "+cardID + " "+cardSerial
     #follows link to View Card Summary page for a particular card
     response1 = br.follow_link(url_regex=r"CardSummary.aspx\?card_id=" + cardID).read()
-    print "card summary"
     #follows link to View Usage History page for a particular card
     response1 = br.follow_link(text_regex=r"View Usage History").read()
-    print "usage history"
     br.select_form(name="aspnetForm")
     response1 = br.submit().read()
-    print response1
     br.select_form(name="aspnetForm")
     
     #transaction status either 'All' or 'Successful' or 'Failed Autoloads';
@@ -118,7 +114,7 @@ def main():
 
     args = vars(parser.parse_args())
 
-     if args['password'] is None:
+    if args['password'] is None:
         args['password'] = getpass.getpass('Enter SmarTrip password: ')
 
     br = mechanize.Browser()
