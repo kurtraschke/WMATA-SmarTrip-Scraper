@@ -34,7 +34,7 @@ class Transaction(Base):
         self.purse_transactions = [PurseTransaction(*pt) for pt in purses]
 
 class PurseTransaction(Base):
-    __tablename__ = 'pursetransactions'
+    __tablename__ = 'purse_transactions'
 
     id = Column(Integer(), primary_key=True)
     transaction_id = Column(Integer(), ForeignKey('transactions.id'))
