@@ -124,7 +124,7 @@ def main():
     if args['list']:
         listCards(cards)
     else:
-        engine = create_engine("sqlite:///" + args['outFile'], echo=True)
+        engine = create_engine("sqlite:///" + args['outFile'])
         Session = sessionmaker(bind=engine)
         session = Session()
         metadata.bind = engine
