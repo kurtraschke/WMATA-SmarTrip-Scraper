@@ -18,6 +18,9 @@
     the official CharmCard launch, and that produced a transaction
     sequence jump.
 
+* How can we uniquely identify transactions when the sequence number
+  wraps at 16?
+
 * Early data (July 2010) sometimes has a null Product; this
   is obviously the stored value purse, but why isn't it listed 
   as such?
